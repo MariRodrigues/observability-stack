@@ -4,6 +4,7 @@
 ## Get latest from https://github.com/github/gitignore/blob/main/VisualStudio.gitignore
 
 # Arquivo de ambiente (nunca versionar!)
+/loki-data
 .env
 .env.*
 !.env.example
