@@ -1,11 +1,8 @@
-version: '3.8'
-
 services:
   loki:
     image: grafana/loki:2.9.0
     container_name: loki
-    ports:
-      - "${LOKI_PORT}:3100"
+    restart: unless-stopped
     volumes:
       - ./loki-config.yaml:/etc/loki/local-config.yaml
       - ./loki-data:/loki
@@ -13,14 +10,10 @@ services:
 
   grafana:
     image: grafana/grafana:10.2.3
-    container_name: grafana_loki_stack
-    ports:
-      - "${GRAFANA_PORT}:3000"
+    container_name: grafana
+    restart: unless-stopped
     environment:
       - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER}
       - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD}
     volumes:
-      - grafana-data:/var/lib/grafana
-
-volumes:
-  grafana-data:
+      - ./grafana-data:/var/lib/grafana

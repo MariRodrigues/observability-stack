@@ -5,6 +5,7 @@
 
 # Arquivo de ambiente (nunca versionar!)
 /loki-data
+/grafana-data
 .env
 .env.*
 !.env.example
