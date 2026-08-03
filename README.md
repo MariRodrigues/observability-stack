@@ -1,11 +1,13 @@
 # 📊 Observability Stack
 
-Stack de observabilidade com **Loki + Grafana**, pensada pra rodar num Raspberry Pi (cartão SD, sem SSD) de forma enxuta, e servir de destino de logs pra vários projetos ao mesmo tempo.
+Stack de observabilidade com **Loki + Grafana + Prometheus**, pensada pra rodar num Raspberry Pi (cartão SD, sem SSD) de forma enxuta, e servir de destino de logs e métricas pra vários projetos ao mesmo tempo.
 
 ## 🧩 Tecnologias
 
 - [Loki](https://grafana.com/oss/loki/) — armazena os logs (storage em filesystem local, sem banco externo)
-- [Grafana](https://grafana.com/) — visualização/consulta dos logs via LogQL
+- [Prometheus](https://prometheus.io/) — armazena métricas (série temporal), coletando por *pull* (scrape) dos alvos configurados
+- [node_exporter](https://github.com/prometheus/node_exporter) — expõe métricas do próprio host (CPU, memória, disco, rede, temperatura) em formato Prometheus
+- [Grafana](https://grafana.com/) — visualização/consulta de logs (LogQL) e métricas (PromQL)
 - [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/) — expõe Grafana e Loki na internet sem abrir porta nenhuma no roteador
 - [Cloudflare Access](https://developers.cloudflare.com/cloudflare-one/policies/access/) — autentica quem acessa, na borda da Cloudflare (antes de chegar no Pi)
 
@@ -68,16 +70,37 @@ Outra Access Application, domínio `loki.seudominio.com`. A policy aqui deve exi
 
 A Loki não tem sistema de login embutido — quem autentica é sempre uma camada na frente dela (aqui, a Cloudflare Access). Como nenhuma porta é publicada pro host e o único caminho de entrada é via túnel + Access, isso é suficiente: ninguém alcança a Loki sem passar pelo Service Token antes.
 
+## 📈 Métricas (Prometheus + node_exporter)
+
+O `node_exporter` roda com `network_mode: host` (enxerga o host diretamente, não a rede isolada do Docker — necessário pra ler métricas reais de CPU/memória/disco do Pi) e expõe elas em `http://localhost:9100/metrics`. O Prometheus, que continua na rede normal do Compose, alcança ele via `host.docker.internal` (mapeado explicitamente pro gateway do host através de `extra_hosts`).
+
+Pra adicionar um novo alvo (por exemplo, a própria aplicação expondo métricas em `/metrics`), edita o `prometheus.yml` e adiciona um novo `job_name` em `scrape_configs`:
+
+```yaml
+scrape_configs:
+  - job_name: 'node_exporter'
+    static_configs:
+      - targets: ['host.docker.internal:9100']
+
+  - job_name: 'cestify-api'
+    static_configs:
+      - targets: ['host.docker.internal:8000']
+```
+
+Como o Prometheus **puxa** (scrape) as métricas, a aplicação não precisa saber nada sobre o Prometheus — só precisa expor `/metrics`. Depois de editar, é preciso reiniciar o container (`docker compose restart prometheus`) pra recarregar a configuração.
+
+No Grafana, adiciona o Prometheus como datasource (`Connections` → `Data sources` → `Prometheus`), URL `http://prometheus:9090`.
+
 ## 📦 Retenção e uso do cartão SD
 
-`loki-config.yaml` mantém `retention_period: 7d` — os logs mais antigos que isso são apagados automaticamente pelo compactor. Isso existe justamente pra não deixar o `loki-data/` crescer indefinidamente e desgastar o cartão SD. Ajuste esse valor se precisar guardar log por mais tempo (com o trade-off de mais escrita/espaço).
+`loki-config.yaml` mantém `retention_period: 7d` — os logs mais antigos que isso são apagados automaticamente pelo compactor. O Prometheus mantém `--storage.tsdb.retention.time=15d`. Isso existe justamente pra não deixar `loki-data/`/`prometheus-data/` crescerem indefinidamente e desgastarem o cartão SD. Ajuste esses valores se precisar guardar dado por mais tempo (com o trade-off de mais escrita/espaço).
 
 ## 🚚 Migrando para uma VPS
 
 Como o storage da Loki é filesystem local (sem banco externo) e as imagens (`grafana/loki`, `grafana/grafana`) são multi-arquitetura, a migração é só copiar dado:
 
 1. No Pi: `docker compose down` (ou pelo menos parar os containers antes de copiar, pra não copiar arquivo sendo escrito)
-2. Copiar as pastas `loki-data/` e `grafana-data/` inteiras pro novo host
+2. Copiar as pastas `loki-data/`, `grafana-data/` e `prometheus-data/` inteiras pro novo host
 3. Levar `docker-compose.yaml`, `loki-config.yaml` e `.env` (recriando os secrets)
 4. Na VPS: `docker compose up -d` — mesmo arquivo, nenhuma alteração necessária
 5. `docker-compose.tunnel.yaml` fica pra trás (a VPS tem IP próprio); resolver exposição por outro meio (reverse proxy com TLS, ou até manter o Cloudflare Tunnel se quiser continuar escondendo o IP de origem)

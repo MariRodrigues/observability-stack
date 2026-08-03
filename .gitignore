@@ -6,6 +6,7 @@
 # Arquivo de ambiente (nunca versionar!)
 /loki-data
 /grafana-data
+/prometheus-data
 .env
 .env.*
 !.env.example
